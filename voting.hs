@@ -4,10 +4,10 @@ import System.Environment
 import System.Random
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Writer
 import Data.Either
 import Data.Maybe
 import Text.Printf
-
 import qualified Data.List as List
 
 import Data.Set (Set)
@@ -18,21 +18,54 @@ import qualified Data.Map as Map
 
 data Candidate = A | B | C | D | E deriving (Bounded, Enum, Read, Show, Eq, Ord)
 
+
 type BallotId = Int
 type VoteMap = Map Int Candidate
 type CandSet = Set Candidate
-type VoteResults = ([(Candidate, Float)], [Char])
+type WriteResult = Writer [String] [Candidate]
+type VoteResult = ([Candidate], [String])
 
 data Ballot = Ballot {
   uid :: BallotId,
   votes :: VoteMap,
-  activity :: [String]
-} deriving (Show)
+  history :: [String]
+--} deriving (Show)
+}
+
+--class PrettyShow a where
+--    dump :: a -> String
+
+instance Show Ballot where
+    show b = "Ballot {"
+                 ++ "uid: " ++  shows (uid b) ", "
+                 ++ "votes: " ++ shows (Map.toList (votes b)) ", "
+                 ++ "history: " ++ "" ++ (List.intercalate ") ->" (reverse (history b))) ++ ""
+                 ++ "}"
+
+
 
 type TallyStore = Map Candidate Int
 type BallotStore = Map Candidate [Ballot]
 
-emptyBallot id = Ballot {uid = id, votes = Map.empty, activity = ""}
+emptyBallot id = Ballot {uid = id, votes = Map.empty, history = []}
+
+updateBallotVotes :: Ballot -> Int -> Candidate -> Ballot
+updateBallotVotes b 1 c = 
+ let b' = updateBallotVotes' b 1 c
+ in updateBallotHist b' $ printf "%s" (show c)
+updateBallotVotes b p c = updateBallotVotes' b p c
+
+updateBallotVotes' :: Ballot -> Int -> Candidate -> Ballot
+updateBallotVotes' b pos c = 
+  let voteMap = votes b                                                                                                                          
+      voteMap' = Map.insert pos c voteMap                                                                                                                                             
+  in b { votes = voteMap' }
+
+updateBallotHist :: Ballot -> String -> Ballot
+updateBallotHist b x =
+  let xs = history b
+  in b { history = (x:xs) }
+
 candidateSet = Set.fromList [A .. E]
 
 uniformWeight = 20
@@ -53,30 +86,25 @@ main = do
 
   let votes = evalState (vote ballotCount) genInit
 
-  putStrLn "VOTES\n"
---  putStrLn $ List.intercalate "\n" $ map show votes
-  prettyPrint votes
-  putStrLn "END VOTE\n"
+  putStrLn "BALLOT VOTES\n"
+  putStrLn $ prettyShow votes
+  
+  putStrLn "\nCLASSIFY DATA\n"
 
   let classified = classify votes
   putStrLn $ show $ classified
 
-  putStrLn "END CLASSIFY\n"
+  putStrLn "\n"
 
+  let (winnerList, logList) = tally classified
+  putStr $ show $ winnerList
+  putStr " "
+  putStrLn $ List.intercalate "\n~" logList
 
-  putStrLn $ show $ tally classified
-
-  putStrLn "END TALLY\n"
-
-prettyPrint :: [Ballot] -> IO ()
-prettyPrint votes = do putStrLn $ List.intercalate "\n" $ map show votes
 
 ---------------------------
 -- VOTE RELATED FUNCTIONS
 ---------------------------
-  
-ifM :: Monad m => m Bool -> m a -> m a -> m a
-ifM p t f  = p >>= (\p' -> if p' then t else f)
 
 vote :: Int -> State StdGen [Ballot]
 vote size = do
@@ -105,13 +133,11 @@ ballotUpdateHelper :: Int -> Maybe Candidate -> Ballot -> CandSet -> Either (Bal
 ballotUpdateHelper pos maybeC ballot set =
   case maybeC of
     Nothing -> Left ballot
-    Just c -> let voteMap = votes ballot 
-                  voteMap' = Map.insert pos c voteMap
-                  ballot' = ballot { votes = voteMap' }
-                  set' = Set.delete c set
-                  end = numCandidates + 1
-               in -- if end wrap value with Left
-                  if pos == end then Left ballot' else Right (ballot', set')
+    Just c -> 
+      let ballot' = updateBallotVotes ballot pos c
+          set' = Set.delete c set
+          end = numCandidates + 1
+      in if pos == end then Left ballot' else Right (ballot', set')
 
 nextChoice :: Int -> CandSet -> State StdGen (Maybe Candidate)
 nextChoice pos set = do
@@ -128,7 +154,7 @@ randomWeighted c = do
   let l3 = [(Nothing, emptyWeight)] ++ l2 -- Add unchosen candidate option as well 
   let sumOfWeights = scanl1 (\(_, acc) (c, w) -> (c, w + acc)) l3 -- Generate accum list
   let (_, maxWeight) = last sumOfWeights
-  gen <- get 
+  gen <- get
   let (target, gen') = randomR (1 :: Int, maxWeight) gen -- Use max as limit in RNG
   put gen'
   let c' = choose target sumOfWeights -- Find matching candidate based on target
@@ -146,12 +172,12 @@ choose target l = fromLeft (Nothing) $ foldM discardBallotsove target l
 ---------------------------
 -- CLASSIFY FUNCTION
 ---------------------------
-  
+
 classify :: [Ballot] -> (Int, TallyStore, BallotStore, (Float, Candidate, Int))
 classify = splitter . foldl reduce1 Map.empty
   where
     firstPos = 1
-    reduce1 firstChoiceAcc b = -- Store ballots won in first round, indexed by candidate 
+    reduce1 firstChoiceAcc b = -- Store ballots won in first round, indexed by candidate
       case Map.lookup firstPos $ votes b of
         Just firstChoiceCandKey -> Map.insertWith (++) firstChoiceCandKey [b] firstChoiceAcc
         Nothing -> firstChoiceAcc
@@ -169,32 +195,24 @@ classify = splitter . foldl reduce1 Map.empty
 -- TALLY FUNCTIONS
 ---------------------------
 
-tally :: (Int, TallyStore, BallotStore, (Float, Candidate, Int)) -> VoteResults
+tally :: (Int, TallyStore, BallotStore, (Float, Candidate, Int)) -> VoteResult
 tally (total, counts, ballots, (percentage, maxKey, maxValue))
-  | percentage > 50.0 = winnerOutright total counts maxKey maxValue
-  | otherwise = winnerCumulative total $ converge counts ballots
+  | percentage > 50.0 = winnerOutright $ (,,,) maxKey maxValue total counts
+  | otherwise = winnerAll total $ converge counts ballots
 
 
-winnerOutright :: Int -> TallyStore -> Candidate -> Int -> VoteResults
-winnerOutright total counts maxKey maxValue =
-  let percentage = percent maxValue total
-      str = printf "WINNER! Candidate has won by over 50% in first round! Counts -> %s" (show counts)
-  in ([(maxKey, percentage)], str)
+winnerOutright :: (Candidate, Int, Int, TallyStore) -> VoteResult
+winnerOutright x = runWriter $ winnerOutrightWithLog x 
 
-winnerCumulative :: Int -> (TallyStore, BallotStore) -> ([(Candidate, Float)], [Char])
-winnerCumulative total (counts, ballots) =
+winnerAll :: Int -> (TallyStore, BallotStore) -> VoteResult
+winnerAll total (counts, ballots) =
   case maxCompare counts of
     [(k1,v1), (k2, v2)] ->
-      if v1 == v2 then
-        let percentage = percent v1 total
-            str = printf "DRAW! Both candidates have the same number of votes. Counts -> %s" (show counts)
-        in ([(k1, percentage),(k2, percentage)], str)
+      if v1 == v2 then 
+        runWriter $ winnerDrawWithLog k1 k2 v1 total counts
       else
-        let proof = fromJust $ Map.lookup k1 ballots
-            percentage = percent v1 total
-            str = printf "WINNER!!! Candidate %s has the most votes with %.3f percent!  Counts -> %s, Winning ballots -> %s" (show k1) (percentage) (show counts) (show proof)
-        in ([(k1, percentage)], str)
-    _ -> ([], "No Winner! something went wrong!")
+        runWriter $ winnerAllWithLog k1 v1 total counts $ fromJust $ Map.lookup k1 ballots
+    _ -> runWriter $ noWinnerWithLog 
 
 converge :: TallyStore -> BallotStore -> (TallyStore, BallotStore)
 converge counts ballots = foldl reduce (counts, ballots) [1..size-2]
@@ -207,31 +225,36 @@ converge counts ballots = foldl reduce (counts, ballots) [1..size-2]
           countsAcc' = Map.delete discardKey countsAcc
       in  redistribute (discardKey, discardBallots) round countsAcc' ballotsAcc'
 
---let str = printf "%d: %s to %s" (round) (show discardKey) (show key)
-
 redistribute :: (Candidate, Maybe [Ballot]) -> Int -> TallyStore -> BallotStore -> (TallyStore, BallotStore)
 redistribute (_, Nothing) _ c b = (c,b)
 redistribute (discardKey, Just discards) round counts ballots = foldl reduce (counts, ballots) discards
   where
 --    updateKeyState :: Maybe Candidate -> Ballot -> TallyStore ->  BallotStore -> (TallyStore, BallotStore)
     updateKeyState Nothing _ s1 s2 = (s1, s2)
-    updateKeyState (Just newKey) value s1 s2 =
+    updateKeyState (Just newKey) ballot s1 s2 =
       if Map.member newKey s1 then -- Proceed only if key is a valid and active candidate
-        let s2' = Map.insertWith (++) newKey [value] s2 -- first update content, then the tally
+        let str =  printf "%d: %s Out, Move to Pick %d=%s" (round) (show discardKey) (round+1) (show newKey)
+            ballot' = updateBallotHist ballot str
+            s2' = Map.insertWith (++) newKey [ballot'] s2 -- first update content, then the tally
             s1' = Map.insertWith (+) newKey 1 s1
         in (s1', s2')
       else (s1, s2)
+      -- Good place to indicate ballots that weren't able to be transfered,
+      -- store a discard pile or BallotDiscardStore
 --    reduce :: (TallyStore, BallotStore) -> Ballot -> (TallyStore, BallotStore)
     reduce (countsAcc, ballotsAcc) ballot =
       let voteMap = votes ballot
           round' = round + 1
-          newRecipient = Map.lookup round' voteMap
-       in updateKeyState newRecipient ballot countsAcc ballotsAcc
+          newKey = Map.lookup round' voteMap
+       in updateKeyState newKey ballot countsAcc ballotsAcc
 
 
 ---------------------------
   -- Helper Functions
 ---------------------------
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM p t f  = p >>= (\p' -> if p' then t else f)
 
 hd (x:xs) = Just x
 hd [] = Nothing
@@ -248,9 +271,73 @@ minCompare = tupCompare LT
 maxCompare :: TallyStore -> [(Candidate, Int)]
 maxCompare = tupCompare GT
 
-
+percent :: (Integral n) => n -> n -> Float
 percent a b = 100 * (fromIntegral a) / (fromIntegral b)
+
+prettyShow :: [Ballot] -> String
+prettyShow votes = List.intercalate "\n" $ map show votes
 
 
 --let str = printf "%d: %s to %s" (round) (show discardKey) (show key)
 -- transfer ballot round oldKey newKey = writer (ballot)
+
+
+
+---------------------------
+  -- Writer Functions
+---------------------------
+
+
+logWinnerOutright :: Candidate -> WriteResult
+logWinnerOutright key =
+  let str = "WINNER! Candidate (%s) has won outright in 1st round by over 50 percent!"
+  in writer ([key], [printf str (show key)])
+
+logWinnerDraw :: Candidate -> Candidate -> WriteResult
+logWinnerDraw k1 k2 =
+  let str = "DRAW! Both candidates (%s) and (%s) have the same number of votes!"
+  in writer ([k1,k2], [printf str (show k1) (show k2)])
+
+logWinnerAll :: Candidate -> WriteResult
+logWinnerAll key =
+  let str = "WINNER!!! Candidate %s has the most votes!"
+  in writer ([key], [printf str (show key)])
+
+logPercent :: Int -> Int -> WriteResult
+logPercent value total = writer ([], [printf "Percentage -> %.3f percent votes!" (percent value total)])
+
+logCounts :: TallyStore -> Int -> WriteResult
+logCounts counts total = writer ([], [printf "Counts -> %s out of %d total" (show $ maxCompare counts) (total)])
+
+logBallots :: [Ballot] -> WriteResult
+logBallots list = writer ([], [printf "Winning Ballots: \n\n%s" (prettyShow list)])
+
+winnerOutrightWithLog :: (Candidate, Int, Int, TallyStore) -> WriteResult
+winnerOutrightWithLog (key, value, total, counts) = do
+  winner <- logWinnerOutright key
+  tell ["Note: (Further rounds ingored as 1st round results prove a decisive outcome)"]
+  logPercent value total
+  logCounts counts total
+  return (winner)
+
+winnerAllWithLog :: Candidate -> Int -> Int -> TallyStore -> [Ballot] -> WriteResult
+winnerAllWithLog key value total counts list = do
+  winner <- logWinnerAll key
+  logPercent value total
+  logCounts counts total
+  tell ["Note: (After all rounds counted, candidate with most votes wins EVEN if less than 50 percent)"]
+  logBallots list
+  return (winner)
+
+winnerDrawWithLog :: Candidate -> Candidate -> Int -> Int -> TallyStore -> WriteResult
+winnerDrawWithLog k1 k2 value total counts = do
+  winner <- logWinnerDraw k1 k2
+  tell ["(A split governing future awaits)"]
+  logPercent value total
+  logCounts counts total
+  return (winner)
+
+noWinnerWithLog :: WriteResult
+noWinnerWithLog = do
+  tell ["NO WINNER?! Something went wrong! Did someone pay the power bill?"]
+  return ([])
