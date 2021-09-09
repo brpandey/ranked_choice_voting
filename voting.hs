@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 import System.Environment
 import System.Random
 import Control.Monad
@@ -19,14 +21,18 @@ data Candidate = A | B | C | D | E deriving (Bounded, Enum, Read, Show, Eq, Ord)
 type BallotId = Int
 type VoteMap = Map Int Candidate
 type CandSet = Set Candidate
+type VoteResults = ([(Candidate, Float)], [Char])
 
 data Ballot = Ballot {
   uid :: BallotId,
-  votes :: VoteMap
+  votes :: VoteMap,
+  activity :: [String]
 } deriving (Show)
 
+type TallyStore = Map Candidate Int
+type BallotStore = Map Candidate [Ballot]
 
-emptyBallot id = Ballot {uid = id, votes = Map.empty}
+emptyBallot id = Ballot {uid = id, votes = Map.empty, activity = ""}
 candidateSet = Set.fromList [A .. E]
 
 uniformWeight = 20
@@ -46,20 +52,24 @@ main = do
   genInit <- getStdGen
 
   let votes = evalState (vote ballotCount) genInit
-  let vlist = map show votes
 
-  putStrLn $ show vlist
-  putStrLn "do the whole list"
-  let slist = List.intercalate "\n" vlist
-
-  putStrLn slist
-
-  putStrLn "Waka waka!"
+  putStrLn "VOTES\n"
+--  putStrLn $ List.intercalate "\n" $ map show votes
+  prettyPrint votes
+  putStrLn "END VOTE\n"
 
   let classified = classify votes
   putStrLn $ show $ classified
 
+  putStrLn "END CLASSIFY\n"
+
+
   putStrLn $ show $ tally classified
+
+  putStrLn "END TALLY\n"
+
+prettyPrint :: [Ballot] -> IO ()
+prettyPrint votes = do putStrLn $ List.intercalate "\n" $ map show votes
 
 ---------------------------
 -- VOTE RELATED FUNCTIONS
@@ -137,7 +147,7 @@ choose target l = fromLeft (Nothing) $ foldM discardBallotsove target l
 -- CLASSIFY FUNCTION
 ---------------------------
   
-classify :: [Ballot] -> (Int, Map Candidate Int, Map Candidate [Ballot], (Candidate, Int))
+classify :: [Ballot] -> (Int, TallyStore, BallotStore, (Float, Candidate, Int))
 classify = splitter . foldl reduce1 Map.empty
   where
     firstPos = 1
@@ -151,59 +161,67 @@ classify = splitter . foldl reduce1 Map.empty
        in if  size > 0 then (size + totalAcc, countsAcc') else (totalAcc, countsAcc')
     splitter acc = -- Allows us to stash acc, pass it to reduce2 and recombine it with results
       let (x,y) = Map.foldlWithKey reduce2 (0, Map.empty) acc
-          max = fromJust $ hd $ maxTupCompare y 
-       in (,,,) x y acc max
-    
+          (maxKey, maxValue) = fromJust $ hd $ maxCompare y
+          percentage = percent maxValue x
+       in (,,,) x y acc (percentage, maxKey, maxValue)
+
 ---------------------------
 -- TALLY FUNCTIONS
 ---------------------------
 
-tally (total, counts, ballots, (maxKey, maxValue))
-  | maxValue / total > 0.5 = winnerOutright total maxKey maxValue
+tally :: (Int, TallyStore, BallotStore, (Float, Candidate, Int)) -> VoteResults
+tally (total, counts, ballots, (percentage, maxKey, maxValue))
+  | percentage > 50.0 = winnerOutright total counts maxKey maxValue
   | otherwise = winnerCumulative total $ converge counts ballots
 
 
-winnerOutright :: Int -> Candidate -> Int -> ([(Int, Float)], [Char])
-winnerOutright total maxKey maxValue = ([(maxKey, 100*(maxValue/total)], "WINNER! Candidate has won by over 50% in first round")
+winnerOutright :: Int -> TallyStore -> Candidate -> Int -> VoteResults
+winnerOutright total counts maxKey maxValue =
+  let percentage = percent maxValue total
+      str = printf "WINNER! Candidate has won by over 50% in first round! Counts -> %s" (show counts)
+  in ([(maxKey, percentage)], str)
 
-winnerCumulative :: Int -> (Map Candidate Int, Map Candidate [Ballot]) -> ([(Int, Float)], [Char])
+winnerCumulative :: Int -> (TallyStore, BallotStore) -> ([(Candidate, Float)], [Char])
 winnerCumulative total (counts, ballots) =
   case maxCompare counts of
-    [(k1,v), (k2,v)] -> 
-      let percentage = 100*(v/total)
-       in ([(k1, percentage),(k2, percentage)], "DRAW! Both candidates have the same number of votes")
-    [(k1,v1), (k2, v2)] -> 
-      let proof = fromJust $ Map.lookup k1 ballots
-          percentage = printf "%0.*f" 4 (100*(v1/total))
-          str = printf "WINNER!!! Candidate %s has the most votes with %s!  Winning ballots -> %s" (show k1) (percentage) (show proof)
-      in ([(k1, percentage)], str)
+    [(k1,v1), (k2, v2)] ->
+      if v1 == v2 then
+        let percentage = percent v1 total
+            str = printf "DRAW! Both candidates have the same number of votes. Counts -> %s" (show counts)
+        in ([(k1, percentage),(k2, percentage)], str)
+      else
+        let proof = fromJust $ Map.lookup k1 ballots
+            percentage = percent v1 total
+            str = printf "WINNER!!! Candidate %s has the most votes with %.3f percent!  Counts -> %s, Winning ballots -> %s" (show k1) (percentage) (show counts) (show proof)
+        in ([(k1, percentage)], str)
     _ -> ([], "No Winner! something went wrong!")
 
-converge :: Map Candidate Int -> Map Candidate [Ballot] -> (Map Candidate Int, Map Candidate [Ballot])
-converge counts ballots = Map.foldlWithKey reduce (counts, ballots) [1..size-2]
+converge :: TallyStore -> BallotStore -> (TallyStore, BallotStore)
+converge counts ballots = foldl reduce (counts, ballots) [1..size-2]
   where
     size = Map.size counts
-    reduce (countsAcc, ballotsAcc) round (c,b) =
-      let discardKey = fst $ hd $ fromJust $ minCompare countsAcc
+    reduce (countsAcc, ballotsAcc) round =
+      let discardKey = fst $ fromJust $ hd $ minCompare countsAcc
           discardBallots = Map.lookup discardKey ballotsAcc
           ballotsAcc' = Map.delete discardKey ballotsAcc
           countsAcc' = Map.delete discardKey countsAcc
-      in  redistribute (discardKey discardBallots) round (countsAcc' ballotsAcc')
+      in  redistribute (discardKey, discardBallots) round countsAcc' ballotsAcc'
 
+--let str = printf "%d: %s to %s" (round) (show discardKey) (show key)
 
-redistribute :: (Candidate, Maybe [Ballot]) -> Int -> (Map Candidate Int, Map Candidate [Ballot]) -> (Map Candidate Int, Map Candidate [Ballot])
-redistribute (_, Nothing) _ (c b) = (c,b)
-redistribute (discardKey, Just discardBallots) round (counts, ballots) = Map.foldlWithKey reduce (counts, ballots) discardBallots
+redistribute :: (Candidate, Maybe [Ballot]) -> Int -> TallyStore -> BallotStore -> (TallyStore, BallotStore)
+redistribute (_, Nothing) _ c b = (c,b)
+redistribute (discardKey, Just discards) round counts ballots = foldl reduce (counts, ballots) discards
   where
+--    updateKeyState :: Maybe Candidate -> Ballot -> TallyStore ->  BallotStore -> (TallyStore, BallotStore)
     updateKeyState Nothing _ s1 s2 = (s1, s2)
-    updateKeyState Just key value s1 s2 =
-        case Map.member key s1 -- Proceed only if key is a valid and an active candidate
-          True -> 
-            --let str = printf "%d: %s to %s" (round) (show discardKey) (show key)
-            let s2' = Map.insertWith (++) key [value] s2 -- first update content, then the tally
-                s1' = Map.insertWith (+) key 1 s1
-             in (s1', s2')
-          False -> (s1, s2)
+    updateKeyState (Just newKey) value s1 s2 =
+      if Map.member newKey s1 then -- Proceed only if key is a valid and active candidate
+        let s2' = Map.insertWith (++) newKey [value] s2 -- first update content, then the tally
+            s1' = Map.insertWith (+) newKey 1 s1
+        in (s1', s2')
+      else (s1, s2)
+--    reduce :: (TallyStore, BallotStore) -> Ballot -> (TallyStore, BallotStore)
     reduce (countsAcc, ballotsAcc) ballot =
       let voteMap = votes ballot
           round' = round + 1
@@ -218,17 +236,21 @@ redistribute (discardKey, Just discardBallots) round (counts, ballots) = Map.fol
 hd (x:xs) = Just x
 hd [] = Nothing
 
-tupCompare :: Ordering -> Map Candidate Int -> [(Candidate, Int)]
+tupCompare :: Ordering -> TallyStore -> [(Candidate, Int)]
 tupCompare o m = List.sortBy (\(_,v1)(_,v2) -> compare' o v1 v2) $ Map.toList m
   where
     compare' GT a b = compare b a
     compare' LT a b = compare a b
-        
 
-minCompare :: Map Candidate Int -> [(Candidate, Int)]
+minCompare :: TallyStore -> [(Candidate, Int)]
 minCompare = tupCompare LT
 
-maxCompare :: Map Candidate Int -> [(Candidate, Int)]
+maxCompare :: TallyStore -> [(Candidate, Int)]
 maxCompare = tupCompare GT
 
 
+percent a b = 100 * (fromIntegral a) / (fromIntegral b)
+
+
+--let str = printf "%d: %s to %s" (round) (show discardKey) (show key)
+-- transfer ballot round oldKey newKey = writer (ballot)
