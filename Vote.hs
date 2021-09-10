@@ -40,10 +40,9 @@ main :: IO ()
 main = do
   args <- getArgs
   let first = hd args
-
-  let first' = maybe defaultCount id first
-  let count = read first' :: Int
-  let printFlag = if count <= upperPrintCount then True else False
+      first' = maybe defaultCount id first
+      count = read first' :: Int
+      printFlag = if count <= upperPrintCount then True else False
 
   startGen <- getStdGen
 
@@ -51,16 +50,12 @@ main = do
 
   case printFlag of
     True -> do
-      putStrLn "BALLOT VOTES\n"
-      putStrLn $ prettyShow votes
+      putStr "~Ballot Votes:"
+      putStrLn $ prettyShow votes False
+      putStrLn ""
     False -> do putStr ""
 
-
-  let classified = classify votes
-
-  putStrLn "\n"
-
-  let (winnerList, logList) = tally printFlag classified
+  let (winnerList, logList) = tally printFlag $ classify votes
   putStr $ show $ winnerList
   putStr " "
   putStrLn $ List.intercalate "\n" logList
@@ -198,23 +193,15 @@ converge :: State (VoteState) ()
 converge = do
   (c, _, _) <- get
   let size = Map.size c
-  mapM_ go [1..size-2]
+  mapM_ run [1..size-2]
   where
-    go round = runMaybeT $ do
-      tally <- lowestTally round
+    run round = runMaybeT $ do
+      tally <- lowestTally
       let discardKey = fst tally
       discardBallots <- lookupValue discardKey
       lift $ update discardKey
       lift $ redistribute discardKey discardBallots round
       return ()
-    lowestTally :: Int -> MaybeT (State VoteState) (Candidate, Int)
-    lowestTally round = MaybeT $ do
-      (c, _, _) <- get
-      return $ hd $ minCompare c
-    lookupValue :: Candidate -> MaybeT (State VoteState) [Ballot]
-    lookupValue discardKey = MaybeT $ do
-      (_, b, _) <- get
-      return $ Map.lookup discardKey b
     update :: Candidate -> State (VoteState) ()
     update discardKey = do
       (c, b, d) <- get
@@ -222,6 +209,17 @@ converge = do
           c' = Map.delete discardKey c
       put (c', b', d)
       return ()
+
+--Converge helper functions that use the MaybeT monad
+lowestTally :: MaybeT (State VoteState) (Candidate, Int)
+lowestTally = MaybeT $ do
+  (c, _, _) <- get
+  return $ hd $ minCompare c
+  
+lookupValue :: Candidate -> MaybeT (State VoteState) [Ballot]
+lookupValue discardKey = MaybeT $ do
+  (_, b, _) <- get
+  return $ Map.lookup discardKey b
 
 
 --Actual function to remove ballot from Candidate X to Y, annotating ballot of its movement
@@ -231,7 +229,7 @@ redistribute :: Candidate -> [Ballot] -> Int -> State (VoteState) ()
 redistribute discardKey discards round = do mapM_ combine discards
   where
     combine ballot = runMaybeT $ do
-      newKey <- lookup ballot
+      newKey <- lookupNextRound round discardKey ballot
       lift $ update newKey ballot
     -- Put ballot into new candidates ballot state and update corresponding tally numbers
     update :: Candidate -> Ballot -> State VoteState ()
@@ -243,25 +241,27 @@ redistribute discardKey discards round = do mapM_ combine discards
           c' = Map.insertWith (+) newKey 1 c -- then update tally
       put (c', b', d)
       return ()
-    lookup :: Ballot -> MaybeT (State VoteState) Candidate
-    lookup ballot = MaybeT $ do
-      (c, _, _) <- get
-      let voteMap = votes ballot
-          round' = round + 1
-          result = Map.lookup round' voteMap
-      -- Tack on another lookup check using liftM to ensure next transfer candidate is still active/valid
-      let result' = join $ liftM (\x -> if Map.member x c then Just x else Nothing) $ result
-      updateDiscard result result' discardKey ballot round -- annotate and store ballot if we can't redistribute
-      return $ result'
+
+--Helper function to retrieve ballot's next round candidate pick
+lookupNextRound :: Int -> Candidate -> Ballot -> MaybeT (State VoteState) Candidate
+lookupNextRound round discardKey ballot = MaybeT $ do
+  (c, _, _) <- get
+  let voteMap = votes ballot
+      round' = round + 1
+      result = Map.lookup round' voteMap
+  -- Tack on another lookup check using liftM to ensure next transfer candidate is still active/valid
+  let result' = join $ liftM (\x -> if Map.member x c then Just x else Nothing) $ result
+  updateDiscard result result' discardKey ballot round -- annotate and store ballot if we can't redistribute
+  return $ result'
 
 --Helper functions to annotate and store discarded ballots that aren't able to be redistributed
 --(Need both Maybe Candidate values to determine appropriate case)
 updateDiscard :: Maybe Candidate -> Maybe Candidate -> Candidate -> Ballot -> Int -> State (VoteState) ()
 updateDiscard Nothing _ key ballot round = do
-  let str = printf "%d: From %s to Discard, No further candidates specified" (round) (show key)
+  let str = printf "%d: From %s to Discard, No further choices specified" (round) (show key)
   updateDiscard' str ballot
 updateDiscard (Just nextKey) Nothing key ballot round = do
-  let str = printf "%d: From %s to Discard, Unable to transfer to now inactive candidate %s" (round) (show key) (show nextKey)
+  let str = printf "%d: From %s to Discard, Pick %d=%s Not Active" (round) (show key) (round+1) (show nextKey)
   updateDiscard' str ballot
 updateDiscard _ _ _ _ _ = do return ()
 

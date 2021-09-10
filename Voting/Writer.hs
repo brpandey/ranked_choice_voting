@@ -42,17 +42,17 @@ logCounts :: TallyStore -> Int -> WriteResult
 logCounts counts total = writer ([], [printf "~Counts -> %s out of %d total" (show $ maxCompare counts) (total)])
 
 logWinBallots :: [Ballot] -> Bool -> WriteResult
-logWinBallots list True = writer ([], [printf "~Winning Ballots: \n%s\n" (prettyShow list)])
-logWinBallots list False = writer ([], [printf "~Winning Ballots: <Hidden>\n\n" ])
+logWinBallots list True = writer ([], [printf "~Winning Ballots: %s" (prettyShow list True)])
+logWinBallots list False = writer ([], [printf "~Winning Ballots: <Hidden>" ])
 
 logDiscardBallots :: [Ballot] -> Bool -> WriteResult
-logDiscardBallots list True = writer ([], [printf "~Discarded Ballots: \n%s\n" (prettyShow list)])
-logDiscardBallots list False = writer ([], [printf "~Discarded Ballots: <Hidden>\n\n" ])
+logDiscardBallots list True = writer ([], [printf "~Discarded Ballots: %s" (prettyShow list True)])
+logDiscardBallots list False = writer ([], [printf "~Discarded Ballots: <Hidden>" ])
 
 winnerOutrightWithLog :: (Candidate, Int, Int, TallyStore) -> WriteResult
 winnerOutrightWithLog (key, value, total, counts) = do
   winner <- logWinnerOutright key
-  tell ["~Note: (Further rounds ingored as 1st round results prove a decisive outcome)"]
+  tell ["~Note: (Further rounds ignored as 1st round results prove a decisive outcome)"]
   logPercent value total
   logCounts counts total
   return (winner)

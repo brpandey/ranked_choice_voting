@@ -40,6 +40,7 @@ maxCompare = tupCompare GT
 percent :: (Integral n) => n -> n -> Float
 percent a b = 100 * (fromIntegral a) / (fromIntegral b)
 
-prettyShow :: [Ballot] -> String
-prettyShow votes = List.intercalate "\n" $ map show votes
-
+prettyShow :: [Ballot] -> Bool -> String
+--prettyShow votes =  List.intercalate "\n\t" $ map show votes
+prettyShow votes False = concat $ List.intersperse "\n" $ "":(map show votes)
+prettyShow votes True = concat $ List.intersperse "\n  " $ "":(map show votes)

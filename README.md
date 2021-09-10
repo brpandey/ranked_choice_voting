@@ -34,8 +34,7 @@ Vote simulates this process by randomly generating vote ballots and ultimately d
 > ghc Vote.hs
 > ./Vote (optional # of ballots, default is 11)
 
-BALLOT VOTES
-
+~Ballot Votes:
 Ballot {uid: 1, votes: [(1,A),(2,E),(3,C),(4,B),(5,D)], candidate history: [A]}
 Ballot {uid: 2, votes: [(1,B),(2,C),(3,E),(4,D),(5,A)], candidate history: [B]}
 Ballot {uid: 3, votes: [(1,E),(2,A),(3,C),(4,D)], candidate history: [E]}
@@ -62,13 +61,12 @@ Ballot {uid: 11, votes: [(1,C),(2,D),(3,B),(4,A),(5,E)], candidate history: [C]}
 ~Counts -> [(B,5),(D,4)] out of 11 total
 ~Note: (After all rounds counted, candidate with most votes wins EVEN if less than 50 percent)
 ~Winning Ballots: 
-Ballot {uid: 1, votes: [(1,A),(2,E),(3,C),(4,B),(5,D)], candidate history: [A -> 3: From A to Pick 4=B]}
-Ballot {uid: 9, votes: [(1,E),(2,A),(3,B),(4,C)], candidate history: [E -> 2: From E to Pick 3=B]}
-Ballot {uid: 7, votes: [(1,B),(2,E),(3,C),(4,D),(5,A)], candidate history: [B]}
-Ballot {uid: 5, votes: [(1,B),(2,C),(3,E),(4,A)], candidate history: [B]}
-Ballot {uid: 2, votes: [(1,B),(2,C),(3,E),(4,D),(5,A)], candidate history: [B]}
-
+  Ballot {uid: 1, votes: [(1,A),(2,E),(3,C),(4,B),(5,D)], candidate history: [A -> 3: From A to Pick 4=B]}
+  Ballot {uid: 9, votes: [(1,E),(2,A),(3,B),(4,C)], candidate history: [E -> 2: From E to Pick 3=B]}
+  Ballot {uid: 7, votes: [(1,B),(2,E),(3,C),(4,D),(5,A)], candidate history: [B]}
+  Ballot {uid: 5, votes: [(1,B),(2,C),(3,E),(4,A)], candidate history: [B]}
+  Ballot {uid: 2, votes: [(1,B),(2,C),(3,E),(4,D),(5,A)], candidate history: [B]}
 ~Discarded Ballots: 
-Ballot {uid: 6, votes: [(1,A),(2,D),(3,B),(4,C),(5,E)], candidate history: [A -> 3: From A to Discard, Unable to transfer to now inactive candidate C]}
-Ballot {uid: 3, votes: [(1,E),(2,A),(3,C),(4,D)], candidate history: [E -> 2: From E to Discard, Unable to transfer to now inactive candidate C]}
+  Ballot {uid: 6, votes: [(1,A),(2,D),(3,B),(4,C),(5,E)], candidate history: [A -> 3: From A to Discard, Pick 4=C Not Active]}
+  Ballot {uid: 3, votes: [(1,E),(2,A),(3,C),(4,D)], candidate history: [E -> 2: From E to Discard, Pick 3=C Not Active]}
 ```
