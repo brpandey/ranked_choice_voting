@@ -1,39 +1,38 @@
 Ranked Choice Vote
 ==================
-![Logo1](https://raw.githubusercontent.com/brpandey/ranked_choice_vote/main/Vote1.jpg
-![Logo2](https://raw.githubusercontent.com/brpandey/ranked_choice_vote/main/Vote2.jpg
 
+>
+> "The ballot is stronger than the bullet" - Abraham Lincoln
+>
+<p float="left">
+  <img src='images/Vote1.jpg' width='400' height='325'/> 
+  <img src='images/Vote2.jpg' width='400' height='325'/>
+</p>
 
-> "The ballot is stronger than the bullet" 
-> - Abraham Lincoln
+The recent June 2021 NYC mayorial race piqued my interest on ranked choice voting as did reading this [interactive piece](https://www.nytimes.com/interactive/2021/nyregion/ranked-choice-voting-nyc.html) 
+and this [writeup](https://www1.nyc.gov/site/civicengagement/voting/ranked-choice-voting.page)
 
-The recent NYC mayorial race really piqued my interest here on ranked choice voting.
-I decided to write a Haskell program to help build a little intuition here.
+So, (as any normal person) I decided to write a Haskell program to help build a little intuition.
 
-Given say 5+ candidates, voters have the ability to rank their top 5 MULTIPLE candidates in order of preference on the ballot.
-If only the top three are specified or top two that is fine as well.  The unique thing is
-that the lowest ranking candidate for each round (e.g. given 5 roounds for 5 ballot choices), that 
-candidate's vote can MOVE to a different candidate.
+Given say 5+ candidates, voters have the ability to rank their top 5 candidates in ORDER of preference.
+If say, only the top three are specified or top two that is COOL too.  When votes are tabulated, the lowest 
+ranking candidate for each round is eliminated and their votes can actually MOVE to a different candidate.
 
-For example let's say after the first round Candidate C ranks the lowest.  For everyone that voted
-for Candidate C in round 1, we can give these ballots to whoever those people select for round 2.  Perhaps this
-could be Candidate A or something like Candidate E.  Whatever the case, as long as that new recipient candidate
-is still active and hasn't been eliminated the ballot changes hands and gets counted for the new candidate.
+Let's say that after the first round, Candidate D ranks the lowest.  For everyone that voted
+for Candidate D here, these ballots are given to whoever those folks selected for round 2, like Candidate B 
+or even Candidate C.  Just as long as that new candidate is still active and hasn't been eliminated yet. 
+Then the ballot ACTUALLY changes hands and gets counted for the new candidate.
 
-This happens until there are two candidates left, with the higher tallying candidate winning even if under 50%. 
-If however, there is a clear outright vote leader in the first round with over 50% of the votes,
-they become the winner preventing any further tallying.
+This proceeds until there are two candidates left, with the highest tallying candidate winning (even if still under 50% of the vote). 
+HOWEVER, if there is a clear outright vote leader in the first round with over 50% of the votes,
+they become ~ WINNER ~ aborting any further round tallying.
  
 Vote simulates this process by randomly generating vote ballots and ultimately determining the winner.
 
 
-The [NYTimes](https://www.nytimes.com/interactive/2021/nyregion/ranked-choice-voting-nyc.html) has a great interactive article on how ranked choice voting works
-The [NYC Civic Engagement Comission](https://www1.nyc.gov/site/civicengagement/voting/ranked-choice-voting.page) also has a good writeup
-
-```haskell
-
+```ocaml
 > ghc Vote.hs
-> ./Vote (# of ballots, default is 11)
+> ./Vote (optional # of ballots, default is 11)
 
 BALLOT VOTES
 
@@ -49,6 +48,14 @@ Ballot {uid: 9, votes: [(1,E),(2,A),(3,B),(4,C)], candidate history: [E]}
 Ballot {uid: 10, votes: [(1,D),(2,B),(3,C),(4,E),(5,A)], candidate history: [D]}
 Ballot {uid: 11, votes: [(1,C),(2,D),(3,B),(4,A),(5,E)], candidate history: [C]}
 
+```
+
+<p float="left">
+  <img src='images/Vote3.png' width='350' height='300'/>
+  <img src='images/Vote4.png' width='350' height='300'/>
+</p>
+
+```ocaml
 
 [B] WINNER!!! Candidate B has the most votes!
 ~Percentage -> 45.455 percent votes!
