@@ -1,6 +1,5 @@
 module Voting.Utility
-  ( ifM
-  , hd
+  ( hd
   , minCompare
   , maxCompare
   , percent
@@ -15,13 +14,9 @@ import qualified Data.Map as Map
 import Voting.Ballot
 import Voting.Candidate
 
-
 type TallyStore = Map Candidate Int
 
-
-ifM :: Monad m => m Bool -> m a -> m a -> m a
-ifM p t f  = p >>= (\p' -> if p' then t else f)
-
+hd :: [a] -> Maybe a
 hd (x:xs) = Just x
 hd [] = Nothing
 
@@ -41,6 +36,5 @@ percent :: (Integral n) => n -> n -> Float
 percent a b = 100 * (fromIntegral a) / (fromIntegral b)
 
 prettyShow :: [Ballot] -> Bool -> String
---prettyShow votes =  List.intercalate "\n\t" $ map show votes
 prettyShow votes False = concat $ List.intersperse "\n" $ "":(map show votes)
 prettyShow votes True = concat $ List.intersperse "\n  " $ "":(map show votes)

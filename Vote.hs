@@ -3,12 +3,11 @@
 import System.Environment
 import System.Random
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Monad.Writer (runWriter)
-import Control.Monad.Except
-
 import Data.Either
 import Data.Maybe
 import Text.Printf
@@ -16,7 +15,6 @@ import qualified Data.List as List
 
 import Data.Set (Set)
 import qualified Data.Set as Set
-
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -60,7 +58,6 @@ main = do
   putStr " "
   putStrLn $ List.intercalate "\n" logList
 
-
 ---------------------------
 -- VOTE RELATED FUNCTIONS
 ---------------------------
@@ -99,13 +96,12 @@ ballotUpdateHelper pos maybeC ballot set =
           -- If we have more choice to populate continue else exit
       in if pos == end then Left ballot' else Right (ballot', set')
 
---Randomly picks theh next ranked choice candidate
+--Randomly picks the next ranked choice candidate
 nextChoice :: Int -> CandSet -> State StdGen (Maybe Candidate)
 nextChoice pos set = do
   let l = Set.toList set 
   cand <- randomWeighted l -- randomly generate next candidate
-   -- If 1st position is empty, redo!
-  ifM (return $ pos == 1 && cand == Nothing) (randomWeighted l) (return cand)
+  if (pos == 1 && cand == Nothing) then randomWeighted l else return cand -- Redo if first slot is empty
 
 
 --Produces a random candidate value given weights over the candidates
@@ -137,13 +133,13 @@ choose target l = fromLeft (Nothing) $ foldM above target l
 -- Setup initial bookeeping state to keep track of votes by candidate
 -- Each candidate has a list of ballots won in the first round
 classify :: [Ballot] -> (Int, TallyStore, BallotStore, (Float, Candidate, Int))
-classify = splitter . foldl reduce1 Map.empty
+classify l = splitter . unwrap $ foldM reduce1 Map.empty l
   where
     pos = 1
+    unwrap = maybe Map.empty id
+    reduce1 :: BallotStore -> Ballot -> Maybe BallotStore
     reduce1 acc b = -- Store ballots won in first round, indexed by candidate
-      case Map.lookup pos $ votes b of
-        Just k -> Map.insertWith (++) k [b] acc
-        Nothing -> acc
+      (\k -> Map.insertWith (++) k [b] acc) <$> (Map.lookup pos $ votes b) -- (a -> b) -> f a -> f b
     reduce2 (totalAcc, countsAcc) k v = -- Record total candidate votes and votes per candidate
       let size = length v
           countsAcc' = Map.insert k size countsAcc
@@ -215,7 +211,7 @@ lowestTally :: MaybeT (State VoteState) (Candidate, Int)
 lowestTally = MaybeT $ do
   (c, _, _) <- get
   return $ hd $ minCompare c
-  
+
 lookupValue :: Candidate -> MaybeT (State VoteState) [Ballot]
 lookupValue discardKey = MaybeT $ do
   (_, b, _) <- get
@@ -226,9 +222,9 @@ lookupValue discardKey = MaybeT $ do
 -- Good place to indicate ballots that weren't able to be transfered,
 -- store a discard pile or BallotDiscardStore
 redistribute :: Candidate -> [Ballot] -> Int -> State (VoteState) ()
-redistribute discardKey discards round = do mapM_ combine discards
+redistribute discardKey discards round = do mapM_ transfer discards
   where
-    combine ballot = runMaybeT $ do
+    transfer ballot = runMaybeT $ do
       newKey <- lookupNextRound round discardKey ballot
       lift $ update newKey ballot
     -- Put ballot into new candidates ballot state and update corresponding tally numbers
