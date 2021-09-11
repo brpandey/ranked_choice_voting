@@ -176,7 +176,8 @@ winnerAll printFlag total (counts, ballots, discards) =
       if v1 == v2 then
         runWriter $ winnerDrawWithLog k1 k2 v1 total counts
       else
-        let wins = maybe [] id $ Map.lookup k1 ballots
+        let unwrap = maybe [] id
+            wins = unwrap $ Map.lookup k1 ballots
         in runWriter $ winnerAllWithLog k1 v1 total counts discards wins printFlag
     _ -> runWriter $ noWinnerWithLog 
 
@@ -184,7 +185,6 @@ winnerAll printFlag total (counts, ballots, discards) =
 --to that ballots round + 1 choice if available.  If not clear to what new candidate ballot should be
 --redistributed to, we don't transfer it and it doesn't get counted again.
 --Process continues until final two candidates are left.
-
 converge :: State (VoteState) ()
 converge = do
   (c, _, _) <- get
@@ -217,10 +217,7 @@ lookupValue discardKey = MaybeT $ do
   (_, b, _) <- get
   return $ Map.lookup discardKey b
 
-
 --Actual function to remove ballot from Candidate X to Y, annotating ballot of its movement
--- Good place to indicate ballots that weren't able to be transfered,
--- store a discard pile or BallotDiscardStore
 redistribute :: Candidate -> [Ballot] -> Int -> State (VoteState) ()
 redistribute discardKey discards round = do mapM_ transfer discards
   where
@@ -245,8 +242,8 @@ lookupNextRound round discardKey ballot = MaybeT $ do
   let voteMap = votes ballot
       round' = round + 1
       result = Map.lookup round' voteMap
-  -- Tack on another lookup check using liftM to ensure next transfer candidate is still active/valid
-  let result' = join $ liftM (\x -> if Map.member x c then Just x else Nothing) $ result
+  -- Tack on another lookup check using bind to ensure next transfer candidate is still active/valid
+  let result' = result >>= (\x -> if Map.member x c then Just x else Nothing)
   updateDiscard result result' discardKey ballot round -- annotate and store ballot if we can't redistribute
   return $ result'
 
