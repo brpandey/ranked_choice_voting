@@ -7,7 +7,13 @@ module Voting.Candidate
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-data Candidate = A | B | C | D | E deriving (Bounded, Enum, Read, Show, Eq, Ord)
+data Candidate
+  = A
+  | B
+  | C
+  | D
+  | E
+  deriving (Bounded, Enum, Read, Show, Eq, Ord)
 
 candidateSet :: Set Candidate
 candidateSet = Set.fromList [A .. E]

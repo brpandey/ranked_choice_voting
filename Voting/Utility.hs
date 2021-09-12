@@ -21,7 +21,8 @@ hd (x:xs) = Just x
 hd [] = Nothing
 
 tupCompare :: Ordering -> TallyStore -> [(Candidate, Int)]
-tupCompare o m = List.sortBy (\(_,v1)(_,v2) -> compare' o v1 v2) $ Map.toList m
+tupCompare o m =
+  List.sortBy (\(_, v1) (_, v2) -> compare' o v1 v2) $ Map.toList m
   where
     compare' GT a b = compare b a
     compare' LT a b = compare a b
@@ -36,5 +37,5 @@ percent :: (Integral n) => n -> n -> Float
 percent a b = 100 * (fromIntegral a) / (fromIntegral b)
 
 prettyShow :: [Ballot] -> Bool -> String
-prettyShow votes False = concat $ List.intersperse "\n" $ "":(map show votes)
-prettyShow votes True = concat $ List.intersperse "\n  " $ "":(map show votes)
+prettyShow votes False = concat $ List.intersperse "\n" $ "" : (map show votes)
+prettyShow votes True = concat $ List.intersperse "\n  " $ "" : (map show votes)

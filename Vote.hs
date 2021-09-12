@@ -1,7 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
-import System.Environment
-import System.Random
+{- LANGUAGE ScopedTypeVariables #-}
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.State
@@ -9,29 +6,38 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 import Control.Monad.Writer (runWriter)
 import Data.Either
-import Data.Maybe
-import Text.Printf
 import qualified Data.List as List
+import Data.Maybe
+import System.Environment
+import System.Random
+import Text.Printf
 
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 
-import Voting.Candidate
 import Voting.Ballot
-import Voting.Writer
+import Voting.Candidate
 import Voting.Utility
+import Voting.Writer
 
 type CandSet = Set Candidate
+
 type VoteResult = ([Candidate], [String])
+
 type TallyStore = Map Candidate Int
+
 type BallotStore = Map Candidate [Ballot]
+
 type VoteState = (TallyStore, BallotStore, [Ballot])
 
 uniformWeight = 20
+
 emptyWeight = 3
+
 defaultCount = "11"
+
 upperPrintCount = 50
 
 main :: IO ()
@@ -40,19 +46,19 @@ main = do
   let first = hd args
       first' = maybe defaultCount id first
       count = read first' :: Int
-      printFlag = if count <= upperPrintCount then True else False
-
+      printFlag =
+        if count <= upperPrintCount
+          then True
+          else False
   startGen <- getStdGen
-
   let votes = evalState (vote count) startGen
-
   case printFlag of
     True -> do
       putStr "~Ballot Votes:"
       putStrLn $ prettyShow votes False
       putStrLn ""
-    False -> do putStr ""
-
+    False -> do
+      putStr ""
   let (winnerList, logList) = tally printFlag $ classify votes
   putStr $ show $ winnerList
   putStr " "
@@ -61,11 +67,10 @@ main = do
 ---------------------------
 -- VOTE RELATED FUNCTIONS
 ---------------------------
-
 -- Vote in bulk size, randomly producing ballots
 vote :: Int -> State StdGen [Ballot]
 vote size = do
-  ballot <- mapM generateBallot [1..size]
+  ballot <- mapM generateBallot [1 .. size]
   return ballot
 
 --Generate single voter ballot randomly while occasionally simulating
@@ -75,34 +80,47 @@ vote size = do
 generateBallot :: Int -> State StdGen Ballot
 generateBallot id = do
   let newBallot = emptyBallot id
-  result <- runExceptT $ foldM genHelper (newBallot, candidateSet) [1..numCandidates+1]
+  result <-
+    runExceptT $
+    foldM genHelper (newBallot, candidateSet) [1 .. numCandidates + 1]
   return $ fromLeft newBallot result
-    where
       --Fold helper to grab the next candidate ranked choice value and update the single ballot.
-      genHelper :: (Ballot, CandSet) -> Int -> ExceptT Ballot (State StdGen) (Ballot, CandSet)
-      genHelper (ballotAcc, setAcc) pos = do
-        nextValue <- lift $ nextChoice pos setAcc
-        ExceptT $ return $ ballotUpdateHelper pos nextValue ballotAcc setAcc
+  where
+    genHelper ::
+         (Ballot, CandSet)
+      -> Int
+      -> ExceptT Ballot (State StdGen) (Ballot, CandSet)
+    genHelper (ballotAcc, setAcc) pos = do
+      nextValue <- lift $ nextChoice pos setAcc
+      ExceptT $ return $ ballotUpdateHelper pos nextValue ballotAcc setAcc
 
 --Helper function to build up the ranked choice candidate selections for a single ballot
-ballotUpdateHelper :: Int -> Maybe Candidate -> Ballot -> CandSet -> Either (Ballot) (Ballot, CandSet)
+ballotUpdateHelper ::
+     Int
+  -> Maybe Candidate
+  -> Ballot
+  -> CandSet
+  -> Either (Ballot) (Ballot, CandSet)
 ballotUpdateHelper pos maybeC ballot set =
   case maybeC of
     Nothing -> Left ballot -- If we have any empty candidate choice stop populating ballot anymore
-    Just c -> 
+    Just c ->
       let ballot' = updateBallotVotes ballot pos c -- Set ballot vote choice pos
           set' = Set.delete c set
           end = numCandidates + 1
           -- If we have more choice to populate continue else exit
-      in if pos == end then Left ballot' else Right (ballot', set')
+       in if pos == end
+            then Left ballot'
+            else Right (ballot', set')
 
 --Randomly picks the next ranked choice candidate
 nextChoice :: Int -> CandSet -> State StdGen (Maybe Candidate)
 nextChoice pos set = do
-  let l = Set.toList set 
+  let l = Set.toList set
   cand <- randomWeighted l -- randomly generate next candidate
-  if (pos == 1 && cand == Nothing) then randomWeighted l else return cand -- Redo if first slot is empty
-
+  if (pos == 1 && cand == Nothing)
+    then randomWeighted l
+    else return cand -- Redo if first slot is empty
 
 --Produces a random candidate value given weights over the candidates
 randomWeighted :: [Candidate] -> State StdGen (Maybe Candidate)
@@ -129,7 +147,6 @@ choose target l = fromLeft (Nothing) $ foldM above target l
 ---------------------------
 -- CLASSIFY FUNCTION
 ---------------------------
-
 -- Setup initial bookeeping state to keep track of votes by candidate
 -- Each candidate has a list of ballots won in the first round
 classify :: [Ballot] -> (Int, TallyStore, BallotStore, (Float, Candidate, Int))
@@ -137,34 +154,43 @@ classify l = splitter . unwrap $ foldM reduce1 Map.empty l
   where
     pos = 1
     unwrap = maybe Map.empty id
+    --Store ballots won in first round, indexed by candidate
     reduce1 :: BallotStore -> Ballot -> Maybe BallotStore
-    reduce1 acc b = -- Store ballots won in first round, indexed by candidate
+    reduce1 acc b =
       (\k -> Map.insertWith (++) k [b] acc) <$> (Map.lookup pos $ votes b) -- (a -> b) -> f a -> f b
-    reduce2 (totalAcc, countsAcc) k v = -- Record total candidate votes and votes per candidate
+    -- Record total candidate votes and votes per candidate
+    reduce2 (totalAcc, countsAcc) k v =
       let size = length v
           countsAcc' = Map.insert k size countsAcc
-       in if size > 0 then (size + totalAcc, countsAcc') else (totalAcc, countsAcc')
-    splitter acc = -- Allows us to stash acc, pass it to reduce2 and recombine it with results
-      let (x,y) = Map.foldlWithKey reduce2 (0, Map.empty) acc
-          (maxKey, maxValue):_ = maxCompare y -- Compute top vote leader
+       in if size > 0
+            then (size + totalAcc, countsAcc')
+            else (totalAcc, countsAcc')
+     -- Allows us to stash acc, pass it to reduce2 and recombine it with results
+    splitter acc =
+      let (x, y) = Map.foldlWithKey reduce2 (0, Map.empty) acc
+          unwrap = maybe (A, 0) id
+          (maxKey, maxValue) = unwrap $ hd $ maxCompare y -- Compute top vote leader
           percentage = percent maxValue x
        in (,,,) x y acc (percentage, maxKey, maxValue)
 
 ---------------------------
 -- TALLY FUNCTIONS
 ---------------------------
-
 --When a candidate receives more than 50% of all first round votes, they win
 --If not, proceed to round to round distribution tally where we converge to the
 --last two candidates
-tally :: Bool -> (Int, TallyStore, BallotStore, (Float, Candidate, Int)) -> VoteResult
-tally printFlag (total, counts, ballots, (percentage, maxKey, maxValue))
+tally ::
+     Bool
+  -> (Int, TallyStore, BallotStore, (Float, Candidate, Int))
+  -> VoteResult
+tally pFlag (total, counts, ballots, (percentage, maxKey, maxValue))
   | percentage > 50.0 = winnerOutright $ (,,,) maxKey maxValue total counts
-  | otherwise = winnerAll printFlag total $ execState (converge) (counts, ballots, [])
+  | otherwise =
+    winnerAll pFlag total $ execState (converge) (counts, ballots, [])
 
 --When a candidate receives more than 50% of all first round votes, they win
 winnerOutright :: (Candidate, Int, Int, TallyStore) -> VoteResult
-winnerOutright x = runWriter $ winnerOutrightWithLog x 
+winnerOutright x = runWriter $ winnerOutrightWithLog x
 
 --When two candidates are left after each loser in each successive round
 --has given up their ballots, we determine which of the two candidates
@@ -172,14 +198,14 @@ winnerOutright x = runWriter $ winnerOutrightWithLog x
 winnerAll :: Bool -> Int -> VoteState -> VoteResult
 winnerAll printFlag total (counts, ballots, discards) =
   case maxCompare counts of
-    [(k1,v1), (k2, v2)] ->
-      if v1 == v2 then
-        runWriter $ winnerDrawWithLog k1 k2 v1 total counts
-      else
-        let unwrap = maybe [] id
-            wins = unwrap $ Map.lookup k1 ballots
-        in runWriter $ winnerAllWithLog k1 v1 total counts discards wins printFlag
-    _ -> runWriter $ noWinnerWithLog 
+    [(k1, v1), (k2, v2)] ->
+      if v1 == v2
+        then runWriter $ winnerDrawWithLog k1 k2 v1 total counts
+        else let unwrap = maybe [] id
+                 wins = unwrap $ Map.lookup k1 ballots
+              in runWriter $
+                 winnerAllWithLog k1 v1 total counts discards wins printFlag
+    _ -> runWriter $ noWinnerWithLog
 
 --First find the losing candidate's ballots in each round then distribute their votes
 --to that ballots round + 1 choice if available.  If not clear to what new candidate ballot should be
@@ -189,15 +215,16 @@ converge :: State (VoteState) ()
 converge = do
   (c, _, _) <- get
   let size = Map.size c
-  mapM_ run [1..size-2]
+  mapM_ run [1 .. size - 2]
   where
-    run round = runMaybeT $ do
-      tally <- lowestTally
-      let discardKey = fst tally
-      discardBallots <- lookupValue discardKey
-      lift $ update discardKey
-      lift $ redistribute discardKey discardBallots round
-      return ()
+    run round =
+      runMaybeT $ do
+        tally <- lowestTally
+        let discardKey = fst tally
+        discardBallots <- lookupValue discardKey
+        lift $ update discardKey
+        lift $ redistribute discardKey discardBallots round
+        return ()
     update :: Candidate -> State (VoteState) ()
     update discardKey = do
       (c, b, d) <- get
@@ -208,27 +235,32 @@ converge = do
 
 --Converge helper functions that use the MaybeT monad
 lowestTally :: MaybeT (State VoteState) (Candidate, Int)
-lowestTally = MaybeT $ do
-  (c, _, _) <- get
-  return $ hd $ minCompare c
+lowestTally =
+  MaybeT $ do
+    (c, _, _) <- get
+    return $ hd $ minCompare c
 
 lookupValue :: Candidate -> MaybeT (State VoteState) [Ballot]
-lookupValue discardKey = MaybeT $ do
-  (_, b, _) <- get
-  return $ Map.lookup discardKey b
+lookupValue discardKey =
+  MaybeT $ do
+    (_, b, _) <- get
+    return $ Map.lookup discardKey b
 
 --Actual function to remove ballot from Candidate X to Y, annotating ballot of its movement
 redistribute :: Candidate -> [Ballot] -> Int -> State (VoteState) ()
-redistribute discardKey discards round = do mapM_ transfer discards
+redistribute discardKey discards round = do
+  mapM_ transfer discards
   where
-    transfer ballot = runMaybeT $ do
-      newKey <- lookupNextRound round discardKey ballot
-      lift $ update newKey ballot
+    transfer ballot =
+      runMaybeT $ do
+        newKey <- lookupNextRound round discardKey ballot
+        lift $ update newKey ballot
     -- Put ballot into new candidates ballot state and update corresponding tally numbers
     update :: Candidate -> Ballot -> State VoteState ()
     update newKey ballot = do
       (c, b, d) <- get
-      let str =  printf "%d: From %s to Pick %d=%s" (round) (show discardKey) (round+1) (show newKey)
+      let pat = "%d: From %s to Pick %d=%s"
+          str = printf pat (round) (show discardKey) (round + 1) (show newKey)
           ballot' = updateBallotHist ballot str
           b' = Map.insertWith (++) newKey [ballot'] b -- first update content
           c' = Map.insertWith (+) newKey 1 c -- then update tally
@@ -236,32 +268,48 @@ redistribute discardKey discards round = do mapM_ transfer discards
       return ()
 
 --Helper function to retrieve ballot's next round candidate pick
-lookupNextRound :: Int -> Candidate -> Ballot -> MaybeT (State VoteState) Candidate
-lookupNextRound round discardKey ballot = MaybeT $ do
-  (c, _, _) <- get
-  let voteMap = votes ballot
-      round' = round + 1
-      result = Map.lookup round' voteMap
+lookupNextRound ::
+     Int -> Candidate -> Ballot -> MaybeT (State VoteState) Candidate
+lookupNextRound round discardKey ballot =
+  MaybeT $ do
+    (c, _, _) <- get
+    let voteMap = votes ballot
+        round' = round + 1
+        value = Map.lookup round' voteMap
   -- Tack on another lookup check using bind to ensure next transfer candidate is still active/valid
-  let result' = result >>= (\x -> if Map.member x c then Just x else Nothing)
-  updateDiscard result result' discardKey ballot round -- annotate and store ballot if we can't redistribute
-  return $ result'
+    let value' =
+          value >>=
+          (\x ->
+             if Map.member x c
+               then Just x
+               else Nothing)
+    updateDiscard value value' discardKey ballot round -- annotate and store ballot if we can't redistribute
+    return $ value'
 
 --Helper functions to annotate and store discarded ballots that aren't able to be redistributed
 --(Need both Maybe Candidate values to determine appropriate case)
-updateDiscard :: Maybe Candidate -> Maybe Candidate -> Candidate -> Ballot -> Int -> State (VoteState) ()
+updateDiscard ::
+     Maybe Candidate
+  -> Maybe Candidate
+  -> Candidate
+  -> Ballot
+  -> Int
+  -> State (VoteState) ()
 updateDiscard Nothing _ key ballot round = do
-  let str = printf "%d: From %s to Discard, No further choices specified" (round) (show key)
+  let pattern = "%d: From %s to Discard, No further choices specified"
+      str = printf pattern (round) (show key)
   updateDiscard' str ballot
 updateDiscard (Just nextKey) Nothing key ballot round = do
-  let str = printf "%d: From %s to Discard, Pick %d=%s Not Active" (round) (show key) (round+1) (show nextKey)
+  let pattern = "%d: From %s to Discard, Pick %d=%s Not Active"
+      str = printf pattern (round) (show key) (round + 1) (show nextKey)
   updateDiscard' str ballot
-updateDiscard _ _ _ _ _ = do return ()
+updateDiscard _ _ _ _ _ = do
+  return ()
 
 --Helper to the helper functions, prepending annotated ballot to the discard list 
 updateDiscard' :: String -> Ballot -> State (VoteState) ()
 updateDiscard' str ballot = do
   (c, b, d) <- get
   let ballot' = updateBallotHist ballot str
-  put (c, b, ballot':d)
+  put (c, b, ballot' : d)
   return ()
