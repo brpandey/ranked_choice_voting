@@ -96,7 +96,11 @@ winnerDrawWithLog k1 k2 value total counts = do
   logCounts counts total
   return (winner)
 
-noWinnerWithLog :: WriteResult
-noWinnerWithLog = do
-  tell ["NO WINNER?! Something went wrong! Did someone pay the power bill?"]
+noWinnerWithLog :: [(Candidate, Int)] -> WriteResult
+noWinnerWithLog list = do
+  let pat =
+        printf
+          "NO WINNER?! Did someone forget to pay the power bill? %s"
+          (show list)
+  tell [pat]
   return ([])

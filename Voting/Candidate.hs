@@ -1,7 +1,7 @@
 module Voting.Candidate
   ( Candidate(..)
-  , candidateSet
-  , numCandidates
+  , candSet
+  , numCand
   ) where
 
 import Data.Set (Set)
@@ -15,8 +15,8 @@ data Candidate
   | E
   deriving (Bounded, Enum, Read, Show, Eq, Ord)
 
-candidateSet :: Set Candidate
-candidateSet = Set.fromList [A .. E]
+candSet :: Set Candidate
+candSet = Set.fromList [A .. E]
 
-numCandidates :: Int
-numCandidates = fromEnum (maxBound :: Candidate)
+numCand :: Int
+numCand = fromEnum (maxBound :: Candidate)
